@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Product, Category, Review
+from .models import User, Product, Category, Review, Customer, Vendor
 
 
 @admin.register(User)
@@ -25,6 +25,54 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('email', 'first_name', 'last_name', 'password1', 'password2', 'role'),
         }),
     )
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ('get_user_email', 'get_user_name', 'loyalty_points', 'get_user_role')
+    list_filter = ('user__role',)
+    search_fields = ('user__email', 'user__first_name', 'user__last_name')
+    filter_horizontal = ('preferred_categories',)
+    
+    def get_user_email(self, obj):
+        return obj.user.email
+    get_user_email.short_description = 'Email'
+    get_user_email.admin_order_field = 'user__email'
+    
+    def get_user_name(self, obj):
+        return obj.user.get_full_name()
+    get_user_name.short_description = 'Full Name'
+    
+    def get_user_role(self, obj):
+        return obj.user.role
+    get_user_role.short_description = 'Role'
+
+
+@admin.register(Vendor)
+class VendorAdmin(admin.ModelAdmin):
+    list_display = ('company_name', 'get_user_email', 'get_user_name', 'verified', 'get_user_role')
+    list_filter = ('verified', 'user__role')
+    search_fields = ('company_name', 'user__email', 'user__first_name', 'user__last_name')
+    list_editable = ('verified',)
+    
+    fieldsets = (
+        ('User Info', {'fields': ('user',)}),
+        ('Company Info', {'fields': ('company_name', 'company_website', 'company_address')}),
+        ('Verification', {'fields': ('verified',)}),
+    )
+    
+    def get_user_email(self, obj):
+        return obj.user.email
+    get_user_email.short_description = 'Email'
+    get_user_email.admin_order_field = 'user__email'
+    
+    def get_user_name(self, obj):
+        return obj.user.get_full_name()
+    get_user_name.short_description = 'Full Name'
+    
+    def get_user_role(self, obj):
+        return obj.user.role
+    get_user_role.short_description = 'Role'
 
 
 @admin.register(Product)

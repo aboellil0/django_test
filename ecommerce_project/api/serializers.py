@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Product, Category, Review
+from .models import Product, Category, Review, Customer, Vendor
 
 User = get_user_model()
 
@@ -74,3 +74,44 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         model = Product
         fields = ('name', 'description', 'price', 'discount_price', 'stock',
                   'image', 'status', 'category', 'is_featured')
+
+
+class CustomerSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_phone = serializers.CharField(source='user.phone', read_only=True)
+    preferred_categories = CategorySerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Customer
+        fields = ('id', 'user', 'user_email', 'user_name', 'user_phone', 
+                  'loyalty_points', 'preferred_categories')
+        read_only_fields = ('user',)
+    
+    def validate_user(self, value):
+        """Ensure user has customer role"""
+        if value.role != 'customer':
+            raise serializers.ValidationError(
+                "User must have 'customer' role to create a customer profile"
+            )
+        return value
+
+
+class VendorSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_phone = serializers.CharField(source='user.phone', read_only=True)
+    
+    class Meta:
+        model = Vendor
+        fields = ('id', 'user', 'user_email', 'user_name', 'user_phone',
+                  'company_name', 'company_website', 'company_address', 'verified')
+        read_only_fields = ('user', 'verified')
+    
+    def validate_user(self, value):
+        """Ensure user has vendor role"""
+        if value.role != 'vendor':
+            raise serializers.ValidationError(
+                "User must have 'vendor' role to create a vendor profile"
+            )
+        return value

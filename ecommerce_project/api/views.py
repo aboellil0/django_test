@@ -5,11 +5,12 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.db.models import Q, Avg
-from .models import Product, Category, Review
+from .models import Product, Category, Review, Customer, Vendor
 from .serializers import (
     UserSerializer, UserRegistrationSerializer,
     ProductSerializer, ProductCreateSerializer,
-    CategorySerializer, ReviewSerializer
+    CategorySerializer, ReviewSerializer,
+    CustomerSerializer, VendorSerializer
 )
 from .permissions import IsOwnerOrReadOnly, IsOwner
 
@@ -148,4 +149,169 @@ class CategoryViewSet(viewsets.ModelViewSet):
         if self.action in ['list', 'retrieve']:
             return [AllowAny()]
         return [IsAdminUser()]
+
+
+class CustomerViewSet(viewsets.ModelViewSet):
+    """ViewSet for Customer CRUD operations"""
+    queryset = Customer.objects.select_related('user').prefetch_related('preferred_categories')
+    serializer_class = CustomerSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__email', 'user__first_name', 'user__last_name']
+    ordering_fields = ['loyalty_points', 'user__created_at']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAdminUser()]
+        elif self.action in ['update', 'partial_update']:
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+    @action(detail=False, methods=['get'])
+    def my_profile(self, request):
+        """Get current user's customer profile"""
+        try:
+            customer = Customer.objects.get(user=request.user)
+            serializer = self.get_serializer(customer)
+            return Response(serializer.data)
+        except Customer.DoesNotExist:
+            return Response(
+                {'error': 'Customer profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'])
+    def create_profile(self, request):
+        """Create customer profile for current user"""
+        if hasattr(request.user, 'customer_profile'):
+            return Response(
+                {'error': 'Customer profile already exists'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if request.user.role != 'customer':
+            return Response(
+                {'error': 'User must have customer role to create a customer profile'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        customer = Customer.objects.create(user=request.user)
+        serializer = self.get_serializer(customer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['patch'])
+    def update_my_profile(self, request):
+        """Update current user's customer profile"""
+        try:
+            customer = Customer.objects.get(user=request.user)
+            serializer = self.get_serializer(customer, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+        except Customer.DoesNotExist:
+            return Response(
+                {'error': 'Customer profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'])
+    def add_preferred_category(self, request):
+        """Add a preferred category"""
+        try:
+            customer = Customer.objects.get(user=request.user)
+            category_id = request.data.get('category_id')
+            category = Category.objects.get(id=category_id)
+            customer.preferred_categories.add(category)
+            serializer = self.get_serializer(customer)
+            return Response(serializer.data)
+        except Customer.DoesNotExist:
+            return Response({'error': 'Customer profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Category.DoesNotExist:
+            return Response({'error': 'Category not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class VendorViewSet(viewsets.ModelViewSet):
+    """ViewSet for Vendor CRUD operations"""
+    queryset = Vendor.objects.select_related('user')
+    serializer_class = VendorSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['company_name', 'user__email', 'user__first_name', 'user__last_name']
+    ordering_fields = ['company_name', 'verified', 'user__created_at']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        elif self.action in ['update', 'partial_update']:
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+    @action(detail=False, methods=['get'])
+    def my_profile(self, request):
+        """Get current user's vendor profile"""
+        try:
+            vendor = Vendor.objects.get(user=request.user)
+            serializer = self.get_serializer(vendor)
+            return Response(serializer.data)
+        except Vendor.DoesNotExist:
+            return Response(
+                {'error': 'Vendor profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'])
+    def create_profile(self, request):
+        """Create vendor profile for current user"""
+        if hasattr(request.user, 'vendor_profile'):
+            return Response(
+                {'error': 'Vendor profile already exists'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if request.user.role != 'vendor':
+            return Response(
+                {'error': 'User must have vendor role to create a vendor profile'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['patch'])
+    def update_my_profile(self, request):
+        """Update current user's vendor profile"""
+        try:
+            vendor = Vendor.objects.get(user=request.user)
+            serializer = self.get_serializer(vendor, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+        except Vendor.DoesNotExist:
+            return Response(
+                {'error': 'Vendor profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['get'])
+    def verified(self, request):
+        """Get all verified vendors"""
+        vendors = Vendor.objects.filter(verified=True)
+        serializer = self.get_serializer(vendors, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def verify(self, request, pk=None):
+        """Verify a vendor (admin only)"""
+        vendor = self.get_object()
+        vendor.verified = True
+        vendor.save()
+        return Response({'status': 'Vendor verified successfully'})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def unverify(self, request, pk=None):
+        """Unverify a vendor (admin only)"""
+        vendor = self.get_object()
+        vendor.verified = False
+        vendor.save()
+        return Response({'status': 'Vendor unverified successfully'})
 
