@@ -8,10 +8,23 @@ from .models import User, Product, Category, Review, Customer, Vendor
 class CustomerCreationForm(UserCreationForm):
     """Form for creating customer users with customer profile"""
     
+    
+    loyalty_points = forms.IntegerField(
+        required=False,
+        initial=0,
+        help_text="Loyalty points for the customer (default is 0)"
+    )
+    preferred_categories = forms.ModelMultipleChoiceField(
+        queryset=Category.objects.all(),
+        required=False,
+        help_text="Preferred categories for the customer (optional)"
+    )
+
     class Meta:
         model = User
         fields = ('email', 'first_name', 'last_name', 'phone', 'address', 
-                  'city', 'country', 'postal_code', 'bio', 'birth_date')
+                  'city', 'country', 'postal_code', 'bio', 'birth_date',
+                  'loyalty_points', 'preferred_categories')
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -25,7 +38,11 @@ class CustomerCreationForm(UserCreationForm):
         if commit:
             user.save()
             # Create customer profile
-            Customer.objects.create(user=user)
+            Customer.objects.create(
+                user=user,
+                loyalty_points=self.cleaned_data.get('loyalty_points', 0),
+                preferred_categories=self.cleaned_data.get('preferred_categories', [])
+            )
         
         return user
 
@@ -128,7 +145,7 @@ class UserAdmin(BaseUserAdmin):
 
 class CustomerUserAdmin(BaseUserAdmin):
     """Admin view specifically for creating and managing customer users"""
-    list_display = ('email', 'first_name', 'last_name', 'is_verified', 'created_at', 'get_loyalty_points')
+    list_display = ('email', 'first_name', 'last_name', 'is_verified', 'created_at', 'get_loyalty_points', 'get_categories')
     list_filter = ('is_verified', 'is_active', 'created_at')
     search_fields = ('email', 'first_name', 'last_name', 'phone')
     ordering = ('-created_at',)
@@ -144,10 +161,15 @@ class CustomerUserAdmin(BaseUserAdmin):
     )
     
     add_fieldsets = (
-        ('Customer Account Information', {
+        ('User Account Information', {
             'classes': ('wide',),
             'fields': ('email', 'first_name', 'last_name', 'phone', 'password1', 'password2'),
             'description': 'Create a new customer account. A customer profile will be created automatically.'
+        }),
+        ('Customer information', {
+            'classes': ('wide',),
+            'fields': ('loyalty_points', 'preferred_categories'),
+            'description': 'Set initial loyalty points and preferred categories for the customer (optional).'
         }),
         ('Additional Information (Optional)', {
             'classes': ('wide', 'collapse'),
@@ -166,7 +188,17 @@ class CustomerUserAdmin(BaseUserAdmin):
             return obj.customer_profile.loyalty_points
         except:
             return 'N/A'
+    
     get_loyalty_points.short_description = 'Loyalty Points'
+
+    @admin.display(description='Preferred Categories')
+    def get_categories(self, obj):
+        """Get customer preferred categories"""
+        try:
+            categories = obj.customer_profile.preferred_categories.all()
+            return ", ".join([cat.name for cat in categories])
+        except:
+            return 'N/A'
 
 
 class VendorUserAdmin(BaseUserAdmin):
@@ -187,12 +219,12 @@ class VendorUserAdmin(BaseUserAdmin):
     )
     
     add_fieldsets = (
-        ('Vendor Account Information', {
+        ('User Account Information', {
             'classes': ('wide',),
             'fields': ('email', 'first_name', 'last_name', 'phone', 'password1', 'password2'),
             'description': 'Create a new vendor account. A vendor profile will be created automatically.'
         }),
-        ('Company Information', {
+        ('Vendor Information', {
             'classes': ('wide',),
             'fields': ('company_name', 'company_website', 'company_address'),
             'description': 'Company details for the vendor. Company name is required.'
