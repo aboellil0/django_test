@@ -69,6 +69,27 @@ class User(AbstractUser):
         return self.products.count()
 
 
+class Customer(models.Model):
+    """Customer Profile extending User"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='customer_profile')
+    loyalty_points = models.PositiveIntegerField(default=0)
+    preferred_categories = models.ManyToManyField('Category', blank=True, related_name='preferred_by_customers')
+
+    def __str__(self):
+        return f"Customer Profile: {self.user.get_full_name()}"
+
+
+class Vendor(models.Model):
+    """Vendor Profile extending User"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='vendor_profile')
+    company_name = models.CharField(max_length=200)
+    company_website = models.URLField(blank=True, null=True)
+    company_address = models.TextField(blank=True, null=True)
+    verified = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Vendor Profile: {self.company_name} ({self.user.get_full_name()})" 
+
 class Category(models.Model):
     """Product Categories"""
     name = models.CharField(max_length=100, unique=True)
