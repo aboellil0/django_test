@@ -7,8 +7,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q, Avg
 from .models import Product, Category, Review, Customer, Vendor
 from .serializers import (
-    UserSerializer, CustomerRegistrationSerializer, VendorRegistrationSerializer,
-    AdminRegistrationSerializer, ProductSerializer, ProductCreateSerializer,
+    UserSerializer, UserRegistrationSerializer, ProductSerializer, ProductCreateSerializer,
     CategorySerializer, ReviewSerializer,
     CustomerSerializer, VendorSerializer
 )
@@ -19,41 +18,29 @@ User = get_user_model()
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def register_customer(request):
-    """Customer Registration Endpoint - Creates user with customer role and profile"""
-    serializer = CustomerRegistrationSerializer(data=request.data)
+def register(request):
+    """
+    Unified Registration Endpoint - Creates user and profile based on role.
+    Supports roles: customer, vendor, admin
+    
+    Required fields:
+    - email, password, password2, first_name, last_name, role
+    
+    Additional fields for vendor:
+    - company_name (required), company_website, company_address
+    """
+    # Check if admin registration and validate permissions
+    role = request.data.get('role', 'customer')
+    if role == 'admin' and not (request.user.is_authenticated and request.user.is_staff):
+        return Response({
+            'error': 'Only administrators can create admin accounts'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
         return Response({
-            'message': 'Customer registered successfully',
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def register_vendor(request):
-    """Vendor Registration Endpoint - Creates user with vendor role and profile"""
-    serializer = VendorRegistrationSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        return Response({
-            'message': 'Vendor registered successfully',
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([IsAdminUser])
-def register_admin(request):
-    """Admin Registration Endpoint - Creates user with admin role (Admin only)"""
-    serializer = AdminRegistrationSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        return Response({
-            'message': 'Admin registered successfully',
+            'message': f'{role.capitalize()} registered successfully',
             'user': UserSerializer(user).data
         }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

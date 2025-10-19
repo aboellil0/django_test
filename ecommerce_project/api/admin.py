@@ -5,224 +5,286 @@ from django import forms
 from .models import User, Product, Category, Review, Customer, Vendor
 
 
-class CustomUserCreationForm(UserCreationForm):
-    """Custom user creation form with role selection"""
-    role = forms.ChoiceField(
-        choices=User.USER_ROLES,
-        required=True,
-        help_text="Select the user role. Profile will be created automatically."
-    )
+class CustomerCreationForm(UserCreationForm):
+    """Form for creating customer users with customer profile"""
     
-    # Customer-specific fields (optional)
-    loyalty_points = forms.IntegerField(
-        initial=0,
-        required=False,
-        help_text="Initial loyalty points for customer (default: 0)"
-    )
-    preferred_categories = forms.ModelMultipleChoiceField(
-        queryset=Category.objects.all(),
-        required=False,
-        widget=forms.CheckboxSelectMultiple,
-        help_text="Select preferred categories for customer"
-    )
+    class Meta:
+        model = User
+        fields = ('email', 'first_name', 'last_name', 'phone', 'address', 
+                  'city', 'country', 'postal_code', 'bio', 'birth_date')
     
-    # Vendor-specific fields (optional)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Add helpful text
+        self.fields['email'].help_text = 'Customer email address'
+    
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.role = 'customer'
+        
+        if commit:
+            user.save()
+            # Create customer profile
+            Customer.objects.create(user=user)
+        
+        return user
+
+
+class VendorCreationForm(UserCreationForm):
+    """Form for creating vendor users with vendor profile"""
+    
+    # Vendor-specific fields
     company_name = forms.CharField(
         max_length=200,
-        required=False,
-        help_text="Required only for vendors"
+        required=True,
+        help_text="Company or business name"
     )
     company_website = forms.URLField(
         required=False,
-        help_text="Optional vendor website"
+        help_text="Company website URL (optional)"
     )
     company_address = forms.CharField(
         widget=forms.Textarea(attrs={'rows': 3}),
         required=False,
-        help_text="Optional vendor address"
-    )
-    verified = forms.BooleanField(
-        required=False,
-        initial=False,
-        help_text="Mark vendor as verified"
+        help_text="Company business address (optional)"
     )
     
     class Meta:
         model = User
-        fields = ('email', 'first_name', 'last_name', 'phone', 'role', 
-                  'password1', 'password2')
+        fields = ('email', 'first_name', 'last_name', 'phone', 'address', 
+                  'city', 'country', 'postal_code', 'bio', 'birth_date')
     
-    def clean(self):
-        cleaned_data = super().clean()
-        role = cleaned_data.get('role')
-        company_name = cleaned_data.get('company_name')
-        
-        # Validate that vendors have company name
-        if role == 'vendor' and not company_name:
-            raise forms.ValidationError({
-                'company_name': 'Company name is required for vendors.'
-            })
-        
-        return cleaned_data
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['email'].help_text = 'Vendor email address'
     
     def save(self, commit=True):
         user = super().save(commit=False)
-        role = self.cleaned_data.get('role')
-        user.role = role
-        
-        # Set staff permissions for admins
-        if role == 'admin':
-            user.is_staff = True
-            user.is_superuser = True
+        user.role = 'vendor'
         
         if commit:
             user.save()
-            
-            # Create role-specific profile
-            if role == 'customer':
-                Customer.objects.create(
-                    user=user,
-                    loyalty_points=self.cleaned_data.get('loyalty_points', 0)
-                )
-                # Add preferred categories
-                customer = user.customer_profile
-                preferred_categories = self.cleaned_data.get('preferred_categories')
-                if preferred_categories:
-                    customer.preferred_categories.set(preferred_categories)
-                    
-            elif role == 'vendor':
-                Vendor.objects.create(
-                    user=user,
-                    company_name=self.cleaned_data.get('company_name', ''),
-                    company_website=self.cleaned_data.get('company_website', ''),
-                    company_address=self.cleaned_data.get('company_address', ''),
-                    verified=self.cleaned_data.get('verified', False)
-                )
+            # Create vendor profile
+            Vendor.objects.create(
+                user=user,
+                company_name=self.cleaned_data.get('company_name'),
+                company_website=self.cleaned_data.get('company_website', ''),
+                company_address=self.cleaned_data.get('company_address', '')
+            )
+        
+        return user
+
+
+class AdminCreationForm(UserCreationForm):
+    """Form for creating admin users"""
+    
+    class Meta:
+        model = User
+        fields = ('email', 'first_name', 'last_name', 'phone')
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['email'].help_text = 'Administrator email address'
+    
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.role = 'admin'
+        user.is_staff = True
+        user.is_superuser = True
+        
+        if commit:
+            user.save()
+            # Admin doesn't need a separate profile
         
         return user
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
+    """Admin view for all users - read-only, displays all user types"""
     list_display = ('email', 'first_name', 'last_name', 'role', 'is_verified', 'is_staff', 'created_at')
-    list_filter = ('role', 'is_verified', 'is_staff', 'is_superuser', 'is_active')
+    list_filter = ('role', 'is_verified', 'is_staff', 'is_superuser', 'is_active', 'created_at')
     search_fields = ('email', 'first_name', 'last_name', 'phone')
     ordering = ('-created_at',)
     
-    add_form = CustomUserCreationForm
-
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal Info', {'fields': ('first_name', 'last_name', 'phone', 'birth_date', 'avatar', 'bio')}),
         ('Address', {'fields': ('address', 'city', 'country', 'postal_code')}),
-        ('Permissions',
-         {'fields': ('role', 'is_verified', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Permissions', {'fields': ('role', 'is_verified', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         ('Important Dates', {'fields': ('last_login', 'date_joined')}),
     )
+    
+    def has_add_permission(self, request):
+        """Prevent direct user creation - use specific customer/vendor/admin forms"""
+        return False
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Make role readonly after creation"""
+        if obj:  # Editing an existing object
+            return self.readonly_fields + ('role',)
+        return self.readonly_fields
 
+
+class CustomerUserAdmin(BaseUserAdmin):
+    """Admin view specifically for creating and managing customer users"""
+    list_display = ('email', 'first_name', 'last_name', 'is_verified', 'created_at', 'get_loyalty_points')
+    list_filter = ('is_verified', 'is_active', 'created_at')
+    search_fields = ('email', 'first_name', 'last_name', 'phone')
+    ordering = ('-created_at',)
+    
+    add_form = CustomerCreationForm
+    
+    fieldsets = (
+        (None, {'fields': ('email', 'password')}),
+        ('Personal Info', {'fields': ('first_name', 'last_name', 'phone', 'birth_date', 'avatar', 'bio')}),
+        ('Address', {'fields': ('address', 'city', 'country', 'postal_code')}),
+        ('Status', {'fields': ('is_verified', 'is_active')}),
+        ('Important Dates', {'fields': ('last_login', 'date_joined')}),
+    )
+    
     add_fieldsets = (
-        (None, {
+        ('Customer Account Information', {
             'classes': ('wide',),
-            'fields': ('email', 'first_name', 'last_name', 'phone', 'role', 
-                       'password1', 'password2'),
+            'fields': ('email', 'first_name', 'last_name', 'phone', 'password1', 'password2'),
+            'description': 'Create a new customer account. A customer profile will be created automatically.'
         }),
-        ('Customer Information (Only for Customers)', {
-            'classes': ('collapse',),
-            'fields': ('loyalty_points', 'preferred_categories'),
-            'description': 'Fill these fields only if creating a customer account'
-        }),
-        ('Vendor Information (Only for Vendors)', {
-            'classes': ('collapse',),
-            'fields': ('company_name', 'company_website', 'company_address', 'verified'),
-            'description': 'Fill these fields only if creating a vendor account. Company name is required for vendors.'
+        ('Additional Information (Optional)', {
+            'classes': ('wide', 'collapse'),
+            'fields': ('address', 'city', 'country', 'postal_code', 'bio', 'birth_date'),
         }),
     )
     
-    def has_add_permission(self, request):
-        """Allow admins to create users"""
-        return request.user.is_superuser or request.user.is_staff
+    def get_queryset(self, request):
+        """Only show customer users"""
+        qs = super().get_queryset(request)
+        return qs.filter(role='customer')
+    
+    def get_loyalty_points(self, obj):
+        """Get customer loyalty points"""
+        try:
+            return obj.customer_profile.loyalty_points
+        except:
+            return 'N/A'
+    get_loyalty_points.short_description = 'Loyalty Points'
 
 
-@admin.register(Customer)
-class CustomerAdmin(admin.ModelAdmin):
-    list_display = ('get_user_email', 'get_user_name', 'loyalty_points', 'get_user_role', 'get_user_date_joined')
-    list_filter = ('user__role', 'user__is_active', 'user__created_at')
-    search_fields = ('user__email', 'user__first_name', 'user__last_name')
-    filter_horizontal = ('preferred_categories',)
-    readonly_fields = ('user',)
+class VendorUserAdmin(BaseUserAdmin):
+    """Admin view specifically for creating and managing vendor users"""
+    list_display = ('email', 'first_name', 'last_name', 'get_company_name', 'get_verified_status', 'created_at')
+    list_filter = ('is_verified', 'is_active', 'created_at')
+    search_fields = ('email', 'first_name', 'last_name', 'phone', 'vendor_profile__company_name')
+    ordering = ('-created_at',)
+    
+    add_form = VendorCreationForm
     
     fieldsets = (
-        ('User Info', {'fields': ('user',)}),
-        ('Customer Details', {'fields': ('loyalty_points', 'preferred_categories')}),
+        (None, {'fields': ('email', 'password')}),
+        ('Personal Info', {'fields': ('first_name', 'last_name', 'phone', 'birth_date', 'avatar', 'bio')}),
+        ('Address', {'fields': ('address', 'city', 'country', 'postal_code')}),
+        ('Status', {'fields': ('is_verified', 'is_active')}),
+        ('Important Dates', {'fields': ('last_login', 'date_joined')}),
     )
     
-    def get_user_email(self, obj):
-        return obj.user.email
-    get_user_email.short_description = 'Email'
-    get_user_email.admin_order_field = 'user__email'
+    add_fieldsets = (
+        ('Vendor Account Information', {
+            'classes': ('wide',),
+            'fields': ('email', 'first_name', 'last_name', 'phone', 'password1', 'password2'),
+            'description': 'Create a new vendor account. A vendor profile will be created automatically.'
+        }),
+        ('Company Information', {
+            'classes': ('wide',),
+            'fields': ('company_name', 'company_website', 'company_address'),
+            'description': 'Company details for the vendor. Company name is required.'
+        }),
+        ('Additional Information (Optional)', {
+            'classes': ('wide', 'collapse'),
+            'fields': ('address', 'city', 'country', 'postal_code', 'bio', 'birth_date'),
+        }),
+    )
     
-    def get_user_name(self, obj):
-        return obj.user.get_full_name()
-    get_user_name.short_description = 'Full Name'
-    get_user_name.admin_order_field = 'user__first_name'
+    def get_queryset(self, request):
+        """Only show vendor users"""
+        qs = super().get_queryset(request)
+        return qs.filter(role='vendor')
     
-    def get_user_role(self, obj):
-        return obj.user.role
-    get_user_role.short_description = 'Role'
-    get_user_role.admin_order_field = 'user__role'
+    def get_company_name(self, obj):
+        """Get vendor company name"""
+        try:
+            return obj.vendor_profile.company_name
+        except:
+            return 'N/A'
+    get_company_name.short_description = 'Company Name'
     
-    def get_user_date_joined(self, obj):
-        return obj.user.created_at
-    get_user_date_joined.short_description = 'Date Joined'
-    get_user_date_joined.admin_order_field = 'user__created_at'
-    
-    def has_add_permission(self, request):
-        """Customers should be created via registration endpoint"""
-        return False
+    def get_verified_status(self, obj):
+        """Get vendor verification status"""
+        try:
+            return '✓ Verified' if obj.vendor_profile.verified else '✗ Not Verified'
+        except:
+            return 'N/A'
+    get_verified_status.short_description = 'Verification Status'
 
 
-@admin.register(Vendor)
-class VendorAdmin(admin.ModelAdmin):
-    list_display = ('company_name', 'get_user_email', 'get_user_name', 'verified', 'get_user_role', 'get_user_date_joined')
-    list_filter = ('verified', 'user__role', 'user__is_active', 'user__created_at')
-    search_fields = ('company_name', 'user__email', 'user__first_name', 'user__last_name')
-    list_editable = ('verified',)
-    readonly_fields = ('user',)
+class AdminUserAdmin(BaseUserAdmin):
+    """Admin view specifically for creating and managing admin users"""
+    list_display = ('email', 'first_name', 'last_name', 'is_staff', 'is_superuser', 'created_at')
+    list_filter = ('is_staff', 'is_superuser', 'is_active', 'created_at')
+    search_fields = ('email', 'first_name', 'last_name', 'phone')
+    ordering = ('-created_at',)
+    
+    add_form = AdminCreationForm
     
     fieldsets = (
-        ('User Info', {'fields': ('user',)}),
-        ('Company Info', {'fields': ('company_name', 'company_website', 'company_address')}),
-        ('Verification', {'fields': ('verified',)}),
+        (None, {'fields': ('email', 'password')}),
+        ('Personal Info', {'fields': ('first_name', 'last_name', 'phone')}),
+        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Important Dates', {'fields': ('last_login', 'date_joined')}),
     )
     
-    def get_user_email(self, obj):
-        return obj.user.email
-    get_user_email.short_description = 'Email'
-    get_user_email.admin_order_field = 'user__email'
+    add_fieldsets = (
+        ('Admin Account Information', {
+            'classes': ('wide',),
+            'fields': ('email', 'first_name', 'last_name', 'phone', 'password1', 'password2'),
+            'description': 'Create a new administrator account with full system access.'
+        }),
+    )
     
-    def get_user_name(self, obj):
-        return obj.user.get_full_name()
-    get_user_name.short_description = 'Full Name'
-    get_user_name.admin_order_field = 'user__first_name'
-    
-    def get_user_role(self, obj):
-        return obj.user.role
-    get_user_role.short_description = 'Role'
-    get_user_role.admin_order_field = 'user__role'
-    
-    def get_user_date_joined(self, obj):
-        return obj.user.created_at
-    get_user_date_joined.short_description = 'Date Joined'
-    get_user_date_joined.admin_order_field = 'user__created_at'
-    
-    def has_add_permission(self, request):
-        """Vendors should be created via registration endpoint"""
-        return False
+    def get_queryset(self, request):
+        """Only show admin users"""
+        qs = super().get_queryset(request)
+        return qs.filter(role='admin')
+
+
+# Create proxy models for cleaner admin interface
+class CustomerUser(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'Customer User'
+        verbose_name_plural = 'Customer Users'
+
+class VendorUser(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'Vendor User'
+        verbose_name_plural = 'Vendor Users'
+
+class AdminUser(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'Admin User'
+        verbose_name_plural = 'Admin Users'
+
+
+# Register proxy models with their specific admin classes
+admin.site.register(CustomerUser, CustomerUserAdmin)
+admin.site.register(VendorUser, VendorUserAdmin)
+admin.site.register(AdminUser, AdminUserAdmin)
+
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'owner', 'category', 'price', 'stock', 'status', 'hoba', 'product_owner' , 'is_featured', 'rating', 'created_at')
+    list_display = ('name', 'owner', 'category', 'price', 'stock', 'status', 'price_category', 'product_owner', 'is_featured', 'rating', 'created_at')
     list_filter = ('status', 'is_featured', 'category', 'created_at')
     search_fields = ('name', 'description', 'owner__email')
     list_per_page = 10
@@ -232,17 +294,18 @@ class ProductAdmin(admin.ModelAdmin):
 
     def product_owner(self, obj):
         return obj.owner.get_full_name()
+    product_owner.short_description = 'Owner Name'
 
     @admin.display(ordering='price', description='Price Category')
-    def hoba(self, Product):
-        if Product.price < 0:
+    def price_category(self, obj):
+        if obj.price < 0:
             return "Invalid Price"
-        elif Product.discount_price < 500:
+        elif obj.discount_price and obj.discount_price < 500:
+            return "Cheap"
+        elif obj.price < 500:
             return "Cheap"
         else:
             return "Expensive"
-        
-        
 
     fieldsets = (
         ('Basic Info', {'fields': ('name', 'slug', 'description', 'owner', 'category')}),
@@ -257,6 +320,7 @@ class ProductAdmin(admin.ModelAdmin):
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ('name', 'created_at')
     search_fields = ('name',)
+    ordering = ('name',)
 
 
 @admin.register(Review)
@@ -264,4 +328,6 @@ class ReviewAdmin(admin.ModelAdmin):
     list_display = ('product', 'user', 'rating', 'created_at')
     list_filter = ('rating', 'created_at')
     search_fields = ('product__name', 'user__email', 'comment')
+    readonly_fields = ('created_at',)
+    ordering = ('-created_at',)
 

@@ -5,43 +5,14 @@ from .models import Product, Category, Review, Customer, Vendor
 User = get_user_model()
 
 
-class CustomerRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for customer registration - creates user with customer role and profile"""
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    """Unified serializer for user registration - creates user and profile based on role"""
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)
+    role = serializers.ChoiceField(choices=['customer', 'vendor', 'admin'], default='customer')
     
-    class Meta:
-        model = User
-        fields = ('id', 'email', 'password', 'password2', 'first_name',
-                  'last_name', 'phone', 'address', 'city', 'country', 
-                  'postal_code', 'bio', 'birth_date')
-    
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({"password": "Passwords don't match"})
-        return attrs
-    
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        password = validated_data.pop('password')
-        
-        # Create user with customer role
-        user = User(**validated_data)
-        user.role = 'customer'
-        user.set_password(password)
-        user.save()
-        
-        # Create customer profile
-        Customer.objects.create(user=user)
-        
-        return user
-
-
-class VendorRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for vendor registration - creates user with vendor role and profile"""
-    password = serializers.CharField(write_only=True, min_length=8)
-    password2 = serializers.CharField(write_only=True, min_length=8)
-    company_name = serializers.CharField(max_length=200)
+    # Vendor-specific fields (optional, only used when role='vendor')
+    company_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     company_website = serializers.URLField(required=False, allow_blank=True)
     company_address = serializers.CharField(required=False, allow_blank=True)
     
@@ -49,66 +20,56 @@ class VendorRegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'email', 'password', 'password2', 'first_name',
                   'last_name', 'phone', 'address', 'city', 'country', 
-                  'postal_code', 'bio', 'birth_date', 'company_name', 
-                  'company_website', 'company_address')
+                  'postal_code', 'bio', 'birth_date', 'role',
+                  'company_name', 'company_website', 'company_address')
     
     def validate(self, attrs):
+        # Validate password match
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Passwords don't match"})
+        
+        # Validate vendor-specific fields if role is vendor
+        role = attrs.get('role', 'customer')
+        if role == 'vendor':
+            if not attrs.get('company_name'):
+                raise serializers.ValidationError(
+                    {"company_name": "Company name is required for vendor registration"}
+                )
+        
         return attrs
     
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
+        role = validated_data.get('role', 'customer')
         
         # Extract vendor-specific fields
-        company_name = validated_data.pop('company_name')
+        company_name = validated_data.pop('company_name', None)
         company_website = validated_data.pop('company_website', None)
         company_address = validated_data.pop('company_address', None)
         
-        # Create user with vendor role
+        # Create user with specified role
         user = User(**validated_data)
-        user.role = 'vendor'
         user.set_password(password)
+        
+        # Set admin permissions if role is admin
+        if role == 'admin':
+            user.is_staff = True
+            user.is_superuser = True
+        
         user.save()
         
-        # Create vendor profile
-        Vendor.objects.create(
-            user=user,
-            company_name=company_name,
-            company_website=company_website,
-            company_address=company_address
-        )
-        
-        return user
-
-
-class AdminRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for admin registration - creates user with admin role"""
-    password = serializers.CharField(write_only=True, min_length=8)
-    password2 = serializers.CharField(write_only=True, min_length=8)
-    
-    class Meta:
-        model = User
-        fields = ('id', 'email', 'password', 'password2', 'first_name',
-                  'last_name', 'phone')
-    
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({"password": "Passwords don't match"})
-        return attrs
-    
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        password = validated_data.pop('password')
-        
-        # Create user with admin role and staff permissions
-        user = User(**validated_data)
-        user.role = 'admin'
-        user.is_staff = True
-        user.is_superuser = True
-        user.set_password(password)
-        user.save()
+        # Create profile based on role
+        if role == 'customer':
+            Customer.objects.create(user=user)
+        elif role == 'vendor':
+            Vendor.objects.create(
+                user=user,
+                company_name=company_name,
+                company_website=company_website or '',
+                company_address=company_address or ''
+            )
+        # Admin role doesn't need a separate profile
         
         return user
 
