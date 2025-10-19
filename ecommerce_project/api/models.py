@@ -78,6 +78,9 @@ class Customer(models.Model):
 
     def __str__(self):
         return f"Customer Profile: {self.user.get_full_name()}"
+    
+    def create(self):
+        return Customer.objects.create(user=self.user)
 
 
 class Vendor(models.Model):
@@ -90,6 +93,9 @@ class Vendor(models.Model):
 
     def __str__(self):
         return f"Vendor Profile: {self.company_name} ({self.user.get_full_name()})" 
+    
+    def create(self):
+        return Vendor.objects.create(user=self.user)
 
 class Category(models.Model):
     """Product Categories"""

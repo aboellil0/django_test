@@ -38,11 +38,16 @@ class CustomerCreationForm(UserCreationForm):
         if commit:
             user.save()
             # Create customer profile
-            Customer.objects.create(
+            customer = Customer.objects.create(
                 user=user,
-                loyalty_points=self.cleaned_data.get('loyalty_points', 0),
-                preferred_categories=self.cleaned_data.get('preferred_categories', [])
+                loyalty_points=self.cleaned_data.get('loyalty_points', 0)
             )
+            # Set ManyToMany field after saving the customer
+            preferred_categories = self.cleaned_data.get('preferred_categories')
+            if preferred_categories:
+                customer.preferred_categories.set(preferred_categories)
+            customer.save()
+            
         
         return user
 
@@ -82,12 +87,14 @@ class VendorCreationForm(UserCreationForm):
         if commit:
             user.save()
             # Create vendor profile
-            Vendor.objects.create(
+            vendor = Vendor.objects.create(
                 user=user,
                 company_name=self.cleaned_data.get('company_name'),
                 company_website=self.cleaned_data.get('company_website', ''),
                 company_address=self.cleaned_data.get('company_address', '')
             )
+            vendor.save()
+            
         
         return user
 
