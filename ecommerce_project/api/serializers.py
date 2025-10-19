@@ -5,26 +5,111 @@ from .models import Product, Category, Review, Customer, Vendor
 User = get_user_model()
 
 
-class UserRegistrationSerializer(serializers.ModelSerializer):
+class CustomerRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer for customer registration - creates user with customer role and profile"""
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)
-
+    
     class Meta:
         model = User
         fields = ('id', 'email', 'password', 'password2', 'first_name',
-                  'last_name', 'phone', 'role')
-
+                  'last_name', 'phone', 'address', 'city', 'country', 
+                  'postal_code', 'bio', 'birth_date')
+    
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Passwords don't match"})
         return attrs
-
+    
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
+        
+        # Create user with customer role
         user = User(**validated_data)
+        user.role = 'customer'
         user.set_password(password)
         user.save()
+        
+        # Create customer profile
+        Customer.objects.create(user=user)
+        
+        return user
+
+
+class VendorRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer for vendor registration - creates user with vendor role and profile"""
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
+    company_name = serializers.CharField(max_length=200)
+    company_website = serializers.URLField(required=False, allow_blank=True)
+    company_address = serializers.CharField(required=False, allow_blank=True)
+    
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'password', 'password2', 'first_name',
+                  'last_name', 'phone', 'address', 'city', 'country', 
+                  'postal_code', 'bio', 'birth_date', 'company_name', 
+                  'company_website', 'company_address')
+    
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Passwords don't match"})
+        return attrs
+    
+    def create(self, validated_data):
+        validated_data.pop('password2')
+        password = validated_data.pop('password')
+        
+        # Extract vendor-specific fields
+        company_name = validated_data.pop('company_name')
+        company_website = validated_data.pop('company_website', None)
+        company_address = validated_data.pop('company_address', None)
+        
+        # Create user with vendor role
+        user = User(**validated_data)
+        user.role = 'vendor'
+        user.set_password(password)
+        user.save()
+        
+        # Create vendor profile
+        Vendor.objects.create(
+            user=user,
+            company_name=company_name,
+            company_website=company_website,
+            company_address=company_address
+        )
+        
+        return user
+
+
+class AdminRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer for admin registration - creates user with admin role"""
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
+    
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'password', 'password2', 'first_name',
+                  'last_name', 'phone')
+    
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Passwords don't match"})
+        return attrs
+    
+    def create(self, validated_data):
+        validated_data.pop('password2')
+        password = validated_data.pop('password')
+        
+        # Create user with admin role and staff permissions
+        user = User(**validated_data)
+        user.role = 'admin'
+        user.is_staff = True
+        user.is_superuser = True
+        user.set_password(password)
+        user.save()
+        
         return user
 
 

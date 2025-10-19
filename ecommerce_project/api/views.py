@@ -7,8 +7,8 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q, Avg
 from .models import Product, Category, Review, Customer, Vendor
 from .serializers import (
-    UserSerializer, UserRegistrationSerializer,
-    ProductSerializer, ProductCreateSerializer,
+    UserSerializer, CustomerRegistrationSerializer, VendorRegistrationSerializer,
+    AdminRegistrationSerializer, ProductSerializer, ProductCreateSerializer,
     CategorySerializer, ReviewSerializer,
     CustomerSerializer, VendorSerializer
 )
@@ -19,13 +19,41 @@ User = get_user_model()
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def register_user(request):
-    """User Registration Endpoint"""
-    serializer = UserRegistrationSerializer(data=request.data)
+def register_customer(request):
+    """Customer Registration Endpoint - Creates user with customer role and profile"""
+    serializer = CustomerRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
         return Response({
-            'message': 'User registered successfully',
+            'message': 'Customer registered successfully',
+            'user': UserSerializer(user).data
+        }, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_vendor(request):
+    """Vendor Registration Endpoint - Creates user with vendor role and profile"""
+    serializer = VendorRegistrationSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        return Response({
+            'message': 'Vendor registered successfully',
+            'user': UserSerializer(user).data
+        }, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def register_admin(request):
+    """Admin Registration Endpoint - Creates user with admin role (Admin only)"""
+    serializer = AdminRegistrationSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        return Response({
+            'message': 'Admin registered successfully',
             'user': UserSerializer(user).data
         }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -45,6 +73,20 @@ class UserViewSet(viewsets.ModelViewSet):
         elif self.action in ['update', 'partial_update', 'destroy']:
             return [IsAuthenticated()]
         return [IsAdminUser()]
+    
+    def create(self, request, *args, **kwargs):
+        """Prevent direct user creation. Use role-specific registration endpoints instead."""
+        return Response(
+            {
+                'error': 'Direct user creation is not allowed. Please use role-specific registration endpoints:',
+                'endpoints': {
+                    'customer': '/api/auth/register/customer/',
+                    'vendor': '/api/auth/register/vendor/',
+                    'admin': '/api/auth/register/admin/ (Admin only)'
+                }
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
 
     @action(detail=False, methods=['get'])
     def me(self, request):
@@ -188,11 +230,16 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        if request.user.role != 'customer':
+        # Check if user already has a vendor profile
+        if hasattr(request.user, 'vendor_profile'):
             return Response(
-                {'error': 'User must have customer role to create a customer profile'},
+                {'error': 'User already has a vendor profile. Cannot create customer profile.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Update user role to customer
+        request.user.role = 'customer'
+        request.user.save()
         
         customer = Customer.objects.create(user=request.user)
         serializer = self.get_serializer(customer)
@@ -266,11 +313,16 @@ class VendorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        if request.user.role != 'vendor':
+        # Check if user already has a customer profile
+        if hasattr(request.user, 'customer_profile'):
             return Response(
-                {'error': 'User must have vendor role to create a vendor profile'},
+                {'error': 'User already has a customer profile. Cannot create vendor profile.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Update user role to vendor
+        request.user.role = 'vendor'
+        request.user.save()
         
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
