@@ -42,10 +42,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         validated_data.pop('password2')
         password = validated_data.pop('password')
         role = validated_data.get('role', 'customer')
-        
-        # extract common customer fields
-        loyalty_points = validated_data.pop('loyalty_points', None)
-        preferred_categories = validated_data.pop('preferred_categories', None)
 
         # Extract vendor-specific fields
         company_name = validated_data.pop('company_name', None)
@@ -65,11 +61,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         
         # Create profile based on role
         if role == 'customer':
-            Customer.objects.create(
-                user=user, 
-                loyalty_points=loyalty_points or 0, 
-                preferred_categories=preferred_categories or []
-                )
+            Customer.objects.create(user=user)
         elif role == 'vendor':
             Vendor.objects.create(
                 user=user,

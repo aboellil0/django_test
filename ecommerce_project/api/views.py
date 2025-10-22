@@ -31,10 +31,12 @@ def register(request):
     """
     # Check if admin registration and validate permissions
     role = request.data.get('role', 'customer')
-    if role == 'admin' and not (request.user.is_authenticated and request.user.is_staff):
-        return Response({
-            'error': 'Only administrators can create admin accounts'
-        }, status=status.HTTP_403_FORBIDDEN)
+    if role == 'admin':
+        # Only authenticated admin users can create admin accounts
+        if not request.user.is_authenticated or not request.user.is_staff:
+            return Response({
+                'error': 'Only administrators can create admin accounts'
+            }, status=status.HTTP_403_FORBIDDEN)
     
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
